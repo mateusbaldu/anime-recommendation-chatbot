@@ -1,0 +1,4 @@
+.env
+vscode/
+github/copilot-instructions.md
+db/migrations/V1__init.sql
