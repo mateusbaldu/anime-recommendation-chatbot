@@ -23,7 +23,7 @@ spring:
 
   flyway:
     enabled: true
-    locations: filesystem:C:/Users/samue/OneDrive/Documentos/GitHub/anime-recommendation-chatbot/db/migrations
+    locations: classpath:db/migration
 server:
   port: 8080
 
