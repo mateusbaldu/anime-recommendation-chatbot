@@ -1,7 +1,7 @@
 package com.animerec.chat.repositories;
 
-import com.animerec.chat.models.Work;
 import com.animerec.chat.enums.WorkType;
+import com.animerec.chat.models.Work;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;

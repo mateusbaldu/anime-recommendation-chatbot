@@ -1,8 +1,8 @@
 package com.animerec.chat.repositories;
 
+import com.animerec.chat.enums.WatchStatus;
 import com.animerec.chat.models.UserWorkStatus;
 import com.animerec.chat.models.UserWorkStatusId;
-import com.animerec.chat.enums.WatchStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
