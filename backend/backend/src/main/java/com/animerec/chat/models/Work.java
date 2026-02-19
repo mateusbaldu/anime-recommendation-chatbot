@@ -6,6 +6,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -54,7 +56,8 @@ public class Work {
     @Column(name = "external_score", precision = 4, scale = 2)
     private BigDecimal externalScore;
 
-    @Column(columnDefinition = "vector(384)")
+    @Column(name = "embedding")
+    @JdbcTypeCode(SqlTypes.VECTOR)
     private float[] embedding;
 
     @CreationTimestamp

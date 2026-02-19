@@ -123,6 +123,11 @@
             <artifactId>opencsv</artifactId>
             <version>5.9</version>
         </dependency>
+        <dependency>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-vector</artifactId>
+            <version>6.6.1.Final</version>
+        </dependency>
     </dependencies>
 
     <build>
