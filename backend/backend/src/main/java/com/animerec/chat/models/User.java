@@ -20,10 +20,10 @@ public class User {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "google_sub", nullable = false, unique = true)
+    @Column(name = "google_sub", unique = true)
     private String googleSub;
 
-    @Column(nullable = false, unique = true)
+    @Column(unique = true)
     private String email;
 
     @Column(name = "display_name")
@@ -34,6 +34,12 @@ public class User {
 
     @Column(name = "persona_summary", columnDefinition = "text")
     private String personaSummary;
+
+    @Column(name = "is_guest", nullable = false)
+    private boolean guest = false;
+
+    @Column(name = "guest_session_id", unique = true)
+    private String guestSessionId;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

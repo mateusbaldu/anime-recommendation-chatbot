@@ -6,9 +6,12 @@ import com.animerec.chat.enums.WorkType;
 import com.animerec.chat.models.Work;
 import com.animerec.chat.repositories.WorkRepository;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -21,30 +24,23 @@ public class WorkService {
     }
 
     public Page<WorkSummaryResponse> search(String query, WorkType type, Pageable pageable) {
-        if (type != null) {
-            return workRepository.findByMediaType(type, pageable)
-                    .map(this::toSummaryResponse);
-        }
-        
-        if (query != null && !query.isBlank()) {
-            return workRepository.findByTitleContainingIgnoreCase(query).stream()
-                    .map(this::toSummaryResponse)
-                    .collect(
-                        () -> Page.empty(pageable),
-                        (page, item) -> {},
-                        (p1, p2) -> {}
-                    );
-        }
-        
-        return workRepository.findAll(pageable)
-                .map(this::toSummaryResponse);
+        Page<Work> works = Optional.ofNullable(type)
+                .map(t -> workRepository.findByMediaType(t, pageable))
+                .orElseGet(() -> Optional.ofNullable(query)
+                        .filter(q -> !q.isBlank())
+                        .<Page<Work>>map(q -> {
+                            List<Work> results = workRepository.findByTitleContainingIgnoreCase(q);
+                            return new PageImpl<>(results, pageable, results.size());
+                        })
+                        .orElseGet(() -> workRepository.findAll(pageable)));
+
+        return works.map(this::toSummaryResponse);
     }
 
     public WorkDetailResponse getById(UUID id) {
-        Work work = workRepository.findById(id)
+        return workRepository.findById(id)
+                .map(this::toDetailResponse)
                 .orElseThrow(() -> new RuntimeException("Work not found"));
-        
-        return toDetailResponse(work);
     }
 
     private WorkSummaryResponse toSummaryResponse(Work work) {
@@ -55,8 +51,7 @@ public class WorkService {
                 work.getMediaType(),
                 work.getExternalScore(),
                 work.getPopularityCount(),
-                work.getGenres()
-        );
+                work.getGenres());
     }
 
     private WorkDetailResponse toDetailResponse(Work work) {
@@ -71,7 +66,6 @@ public class WorkService {
                 work.getPopularityCount(),
                 work.getGenres(),
                 work.getThemes(),
-                work.getCreatedAt()
-        );
+                work.getCreatedAt());
     }
 }

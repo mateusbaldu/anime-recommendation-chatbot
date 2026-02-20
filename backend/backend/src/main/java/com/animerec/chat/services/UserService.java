@@ -19,8 +19,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 public class UserService {
@@ -54,19 +54,23 @@ public class UserService {
         return authenticationProvider.getCurrentUserId();
     }
 
+    @Transactional
+    public User getOrCreateGuestUser(String guestSessionId) {
+        return userRepository.findByGuestSessionId(guestSessionId)
+                .orElseGet(() -> {
+                    User guest = new User();
+                    guest.setGuest(true);
+                    guest.setGuestSessionId(guestSessionId);
+                    guest.setDisplayName("Guest");
+                    return userRepository.save(guest);
+                });
+    }
+
     public UserResponse getProfile() {
         UUID userId = getCurrentUserId();
-        User user = userRepository.findById(userId)
+        return userRepository.findById(userId)
+                .map(this::toUserResponse)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        
-        return new UserResponse(
-                user.getId(),
-                user.getEmail(),
-                user.getDisplayName(),
-                user.getProfileImage(),
-                user.getCreatedAt(),
-                user.getConsentedAt()
-        );
     }
 
     @Transactional
@@ -74,24 +78,12 @@ public class UserService {
         UUID userId = getCurrentUserId();
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        
-        if (request.displayName() != null) {
-            user.setDisplayName(request.displayName());
-        }
-        if (request.profileImage() != null) {
-            user.setProfileImage(request.profileImage());
-        }
-        
+
+        Optional.ofNullable(request.displayName()).ifPresent(user::setDisplayName);
+        Optional.ofNullable(request.profileImage()).ifPresent(user::setProfileImage);
+
         user = userRepository.save(user);
-        
-        return new UserResponse(
-                user.getId(),
-                user.getEmail(),
-                user.getDisplayName(),
-                user.getProfileImage(),
-                user.getCreatedAt(),
-                user.getConsentedAt()
-        );
+        return toUserResponse(user);
     }
 
     @Transactional
@@ -99,7 +91,7 @@ public class UserService {
         UUID userId = getCurrentUserId();
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        
+
         user.setDeletedAt(LocalDateTime.now());
         userRepository.save(user);
     }
@@ -115,39 +107,37 @@ public class UserService {
         UUID userId = getCurrentUserId();
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        
+
         DataSource source = dataSourceRepository.findByName(request.sourceName())
                 .orElseThrow(() -> new RuntimeException("Data source not found: " + request.sourceName()));
-        
+
         UserReview review = new UserReview();
         review.setUser(user);
         review.setNormalizedScore(request.normalizedScore());
         review.setReviewText(request.reviewText());
         review.setReviewedAt(request.reviewedAt());
         review.setSource(source);
-        
-        if (request.workId() != null) {
-            Work work = workRepository.findById(request.workId())
-                    .orElseThrow(() -> new RuntimeException("Work not found"));
-            review.setWork(work);
-        } else {
-            review.setExternalTitle(request.externalTitle());
-        }
-        
-        review = userReviewRepository.save(review);
-        return toReviewResponse(review);
+
+        Optional.ofNullable(request.workId())
+                .ifPresentOrElse(
+                        workId -> {
+                            Work work = workRepository.findById(workId)
+                                    .orElseThrow(() -> new RuntimeException("Work not found"));
+                            review.setWork(work);
+                        },
+                        () -> review.setExternalTitle(request.externalTitle()));
+
+        UserReview saved = userReviewRepository.save(review);
+        return toReviewResponse(saved);
     }
 
     @Transactional
     public void deleteReview(UUID reviewId) {
         UUID userId = getCurrentUserId();
         UserReview review = userReviewRepository.findById(reviewId)
-                .orElseThrow(() -> new RuntimeException("Review not found"));
-        
-        if (!review.getUser().getId().equals(userId)) {
-            throw new RuntimeException("Unauthorized");
-        }
-        
+                .filter(r -> r.getUser().getId().equals(userId))
+                .orElseThrow(() -> new RuntimeException("Review not found or unauthorized"));
+
         userReviewRepository.delete(review);
     }
 
@@ -159,7 +149,7 @@ public class UserService {
         UUID userId = getCurrentUserId();
         return userWorkStatusRepository.findByIdUserId(userId).stream()
                 .map(this::toWorkStatusResponse)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Transactional
@@ -167,19 +157,19 @@ public class UserService {
         UUID userId = getCurrentUserId();
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        
+
         Work work = workRepository.findById(request.workId())
                 .orElseThrow(() -> new RuntimeException("Work not found"));
-        
+
         UserWorkStatusId id = new UserWorkStatusId(userId, request.workId());
         UserWorkStatus status = userWorkStatusRepository.findById(id)
                 .orElse(new UserWorkStatus());
-        
+
         status.setId(id);
         status.setUser(user);
         status.setWork(work);
         status.setStatus(request.status());
-        
+
         status = userWorkStatusRepository.save(status);
         return toWorkStatusResponse(status);
     }
@@ -188,11 +178,11 @@ public class UserService {
     public void deleteWatchStatus(UUID workId) {
         UUID userId = getCurrentUserId();
         UserWorkStatusId id = new UserWorkStatusId(userId, workId);
-        
+
         if (!userWorkStatusRepository.existsById(id)) {
             throw new RuntimeException("Watch status not found");
         }
-        
+
         userWorkStatusRepository.deleteById(id);
     }
 
@@ -202,18 +192,28 @@ public class UserService {
                 .map(this::toRecommendationResponse);
     }
 
+    private UserResponse toUserResponse(User user) {
+        return new UserResponse(
+                user.getId(),
+                user.getEmail(),
+                user.getDisplayName(),
+                user.getProfileImage(),
+                user.getCreatedAt(),
+                user.getConsentedAt());
+    }
+
     private UserReviewResponse toReviewResponse(UserReview review) {
+        Optional<Work> work = Optional.ofNullable(review.getWork());
         return new UserReviewResponse(
                 review.getId(),
-                review.getWork() != null ? review.getWork().getId() : null,
-                review.getWork() != null ? review.getWork().getTitle() : null,
+                work.map(Work::getId).orElse(null),
+                work.map(Work::getTitle).orElse(null),
                 review.getExternalTitle(),
                 review.getSource().getName(),
                 review.getNormalizedScore(),
                 review.getReviewText(),
                 review.getReviewedAt(),
-                review.getCreatedAt()
-        );
+                review.getCreatedAt());
     }
 
     private UserWorkStatusResponse toWorkStatusResponse(UserWorkStatus status) {
@@ -221,8 +221,7 @@ public class UserService {
                 status.getWork().getId(),
                 status.getWork().getTitle(),
                 status.getStatus(),
-                status.getUpdatedAt()
-        );
+                status.getUpdatedAt());
     }
 
     private RecommendationResponse toRecommendationResponse(Recommendation rec) {
@@ -234,16 +233,14 @@ public class UserService {
                 work.getMediaType(),
                 work.getExternalScore(),
                 work.getPopularityCount(),
-                work.getGenres()
-        );
-        
+                work.getGenres());
+
         return new RecommendationResponse(
                 rec.getId(),
                 workSummary,
                 rec.getReason(),
                 rec.getDiversityFlag(),
-                rec.getChatSession() != null ? rec.getChatSession().getId() : null,
-                rec.getCreatedAt()
-        );
+                Optional.ofNullable(rec.getChatSession()).map(ChatSession::getId).orElse(null),
+                rec.getCreatedAt());
     }
 }

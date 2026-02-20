@@ -45,29 +45,26 @@ public class ChatSessionService {
         UUID userId = getCurrentUserId();
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        
+
         ChatSession session = new ChatSession();
         session.setUser(user);
         session.setMessages("[]");
-        
+
         session = chatSessionRepository.save(session);
         return toResponse(session);
     }
 
     public ChatSessionResponse getById(UUID id) {
         UUID userId = getCurrentUserId();
-        ChatSession session = chatSessionRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Chat session not found"));
-        
-        if (!session.getUser().getId().equals(userId)) {
-            throw new RuntimeException("Unauthorized");
-        }
-        
-        return toResponse(session);
+        return chatSessionRepository.findById(id)
+                .filter(session -> session.getUser().getId().equals(userId))
+                .map(this::toResponse)
+                .orElseThrow(() -> new RuntimeException("Chat session not found or unauthorized"));
     }
 
     public SseEmitter sendMessage(UUID sessionId, String message) {
-        throw new UnsupportedOperationException("AI service integration not implemented yet - requires FastAPI connection");
+        throw new UnsupportedOperationException(
+                "AI service integration not implemented yet - requires FastAPI connection");
     }
 
     private ChatSessionResponse toResponse(ChatSession session) {
@@ -75,7 +72,6 @@ public class ChatSessionService {
                 session.getId(),
                 session.getMessages(),
                 session.getCreatedAt(),
-                session.getUpdatedAt()
-        );
+                session.getUpdatedAt());
     }
 }

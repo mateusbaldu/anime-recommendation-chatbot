@@ -1,7 +1,7 @@
 package com.animerec.chat.services;
 
 import com.animerec.chat.enums.WorkType;
-import com.animerec.chat.models.DataSource;
+import com.animerec.chat.exceptions.CsvImportException;
 import com.animerec.chat.models.Work;
 import com.animerec.chat.repositories.DataSourceRepository;
 import com.animerec.chat.repositories.WorkRepository;
@@ -16,7 +16,13 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.math.BigDecimal;
+import java.util.Iterator;
 import java.util.Optional;
+import java.util.Spliterator;
+import java.util.Spliterators;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 @Service
 @RequiredArgsConstructor
@@ -29,74 +35,106 @@ public class WorkImportService {
 
     @Transactional
     public int importWorks(MultipartFile file) {
-        int count = 0;
+        AtomicInteger count = new AtomicInteger(0);
+
         try (Reader reader = new InputStreamReader(file.getInputStream());
                 CSVReader csvReader = new CSVReaderBuilder(reader).withSkipLines(1).build()) {
 
-            String[] line;
-            while ((line = csvReader.readNext()) != null) {
-                log.debug("Processing row: {}", (Object) line);
-                try {
-                    Integer malId = parseInteger(line[0]);
-                    String title = line[1];
-                    String synopsis = line[2];
-                    String typeStr = line[3];
-                    BigDecimal score = parseBigDecimal(line[4]);
+            csvReaderStream(csvReader)
+                    .peek(line -> log.debug("Processing row: {}", (Object) line))
+                    .map(this::parseRow)
+                    .filter(Optional::isPresent)
+                    .map(Optional::get)
+                    .filter(work -> workRepository.findByMalId(work.getMalId()).isEmpty())
+                    .peek(this::enrichWithEmbedding)
+                    .forEach(work -> {
+                        workRepository.save(work);
+                        count.incrementAndGet();
+                    });
 
-                    Optional<Work> existing = workRepository.findByMalId(malId);
-                    if (existing.isPresent()) {
-                        continue;
-                    }
-
-                    Work work = new Work();
-                    work.setMalId(malId);
-                    work.setTitle(title);
-                    work.setSynopsis(synopsis);
-                    work.setExternalScore(score);
-
-                    if (typeStr != null) {
-                        try {
-                            work.setMediaType(WorkType.valueOf(typeStr.toUpperCase()));
-                        } catch (IllegalArgumentException e) {
-                        }
-                    }
-
-                    if (synopsis != null && !synopsis.isEmpty()) {
-                        float[] embedding = aiService.getEmbedding(synopsis);
-                        work.setEmbedding(embedding);
-                    }
-
-                    workRepository.save(work);
-                    count++;
-                } catch (Exception e) {
-                    log.error("Error processing row {}: {}", count, e.getMessage(), e);
-                }
-            }
+        } catch (CsvImportException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Failed to import CSV", e);
-            throw new RuntimeException("Failed to import CSV: " + e.getMessage());
+            throw new CsvImportException("Failed to import CSV: " + e.getMessage(), e);
         }
-        log.info("Completed CSV import. Processed {} records.", count);
-        return count;
+
+        log.info("Completed CSV import. Processed {} records.", count.get());
+        return count.get();
+    }
+
+    private Stream<String[]> csvReaderStream(CSVReader csvReader) {
+        Iterator<String[]> iterator = csvReader.iterator();
+        Spliterator<String[]> spliterator = Spliterators.spliteratorUnknownSize(iterator, Spliterator.ORDERED);
+        return StreamSupport.stream(spliterator, false);
+    }
+
+    private Optional<Work> parseRow(String[] line) {
+        try {
+            Integer malId = parseInteger(line[0]);
+            String title = line[1];
+            String synopsis = line[2];
+            String typeStr = line[3];
+            BigDecimal score = parseBigDecimal(line[4]);
+
+            Work work = new Work();
+            work.setMalId(malId);
+            work.setTitle(title);
+            work.setSynopsis(synopsis);
+            work.setExternalScore(score);
+
+            Optional.ofNullable(typeStr)
+                    .map(String::toUpperCase)
+                    .flatMap(this::safeParseWorkType)
+                    .ifPresent(work::setMediaType);
+
+            return Optional.of(work);
+        } catch (Exception e) {
+            log.error("Error processing row: {}", e.getMessage(), e);
+            return Optional.empty();
+        }
+    }
+
+    private void enrichWithEmbedding(Work work) {
+        Optional.ofNullable(work.getSynopsis())
+                .filter(s -> !s.isEmpty())
+                .map(aiService::getEmbedding)
+                .ifPresent(work::setEmbedding);
+    }
+
+    private Optional<WorkType> safeParseWorkType(String typeStr) {
+        try {
+            return Optional.of(WorkType.valueOf(typeStr));
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
     }
 
     private Integer parseInteger(String val) {
-        if (val == null || val.trim().isEmpty())
-            return null;
-        try {
-            return Integer.parseInt(val.trim());
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return Optional.ofNullable(val)
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .flatMap(s -> {
+                    try {
+                        return Optional.of(Integer.parseInt(s));
+                    } catch (NumberFormatException e) {
+                        return Optional.empty();
+                    }
+                })
+                .orElse(null);
     }
 
     private BigDecimal parseBigDecimal(String val) {
-        if (val == null || val.trim().isEmpty())
-            return null;
-        try {
-            return new BigDecimal(val.trim());
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return Optional.ofNullable(val)
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .flatMap(s -> {
+                    try {
+                        return Optional.of(new BigDecimal(s));
+                    } catch (NumberFormatException e) {
+                        return Optional.empty();
+                    }
+                })
+                .orElse(null);
     }
 }

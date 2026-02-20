@@ -21,11 +21,7 @@ public class ImportController {
         if (file.isEmpty()) {
             return ResponseEntity.badRequest().body("File is empty");
         }
-        try {
-            int count = workImportService.importWorks(file);
-            return ResponseEntity.ok("Imported " + count + " works.");
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("Import failed: " + e.getMessage());
-        }
+        int count = workImportService.importWorks(file);
+        return ResponseEntity.ok("Imported " + count + " works.");
     }
 }
