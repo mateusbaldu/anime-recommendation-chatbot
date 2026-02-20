@@ -1,0 +1,5 @@
+﻿src/components/layout/Sidebar.tsx(1,1): error TS6133: 'React' is declared but its value is never read.
+src/features/chat/ChatInterface.tsx(1,8): error TS6133: 'React' is declared but its value is never read.
+src/features/import/ImportCSV.tsx(1,8): error TS6133: 'React' is declared but its value is never read.
+src/pages/Home.tsx(1,1): error TS6133: 'React' is declared but its value is never read.
+src/pages/Home.tsx(5,1): error TS6133: 'ImportCSV' is declared but its value is never read.

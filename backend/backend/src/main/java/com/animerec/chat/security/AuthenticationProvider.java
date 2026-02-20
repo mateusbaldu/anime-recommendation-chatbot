@@ -24,12 +24,10 @@ public class AuthenticationProvider {
         Authentication authentication = getAuthentication();
         Object principal = authentication.getPrincipal();
 
-        // Guest user: principal is the User entity itself
         if (principal instanceof User guestUser) {
             return guestUser.getId();
         }
 
-        // OAuth2 user: principal is OAuth2User
         if (principal instanceof OAuth2User oAuth2User) {
             String googleSub = Optional.ofNullable(oAuth2User.<String>getAttribute("sub"))
                     .orElseThrow(() -> new RuntimeException("Google 'sub' not found in OAuth2 token"));
@@ -46,12 +44,10 @@ public class AuthenticationProvider {
         Authentication authentication = getAuthentication();
         Object principal = authentication.getPrincipal();
 
-        // Guest user: return the User entity directly
         if (principal instanceof User guestUser) {
             return guestUser;
         }
 
-        // OAuth2 user: look up by ID
         UUID userId = getCurrentUserId();
         return userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));

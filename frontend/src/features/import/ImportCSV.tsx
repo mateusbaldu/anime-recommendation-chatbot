@@ -1,13 +1,21 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Button } from '../../components/ui/Button';
 
-export function ImportCSV() {
+interface ImportCSVProps {
+    onImportCompleted?: () => void;
+}
+
+export function ImportCSV({ onImportCompleted }: ImportCSVProps) {
     const [file, setFile] = useState<File | null>(null);
 
     const handleImport = () => {
         if (!file) return;
         console.log("Importing file...", file.name);
-        // Logic to send file to backend
+
+
+        if (onImportCompleted) {
+            onImportCompleted();
+        }
     };
 
     return (

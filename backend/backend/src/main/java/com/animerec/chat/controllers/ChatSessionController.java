@@ -16,6 +16,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/chats")
+@CrossOrigin(origins = { "http://localhost:5173", "http://localhost:80" }, allowCredentials = "true")
 public class ChatSessionController {
 
     private final ChatSessionService chatSessionService;
@@ -46,4 +47,3 @@ public class ChatSessionController {
         return chatSessionService.sendMessage(id, request.message());
     }
 }
-

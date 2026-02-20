@@ -8,11 +8,18 @@ from dotenv import load_dotenv
 import os
 from typing import List, Dict, Any
 from pathlib import Path
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi import Request
 
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Anime Recommendation AI Service")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 try:
     embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -37,31 +44,34 @@ async def root():
     return {"message": "Anime Recommendation AI Service is running"}
 
 @app.post("/embed")
-async def generate_embedding(request: EmbedRequest):
+@limiter.limit("20/minute")
+async def generate_embedding(request: Request, embed_req: EmbedRequest):
     if embedding_model is None:
         raise HTTPException(status_code=500, detail="Embedding model not initialized.")
     
     try:
-        embedding = embedding_model.encode(request.text)
+        embedding = embedding_model.encode(embed_req.text)
         return {"embedding": embedding.tolist()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating embedding: {str(e)}")
 
 @app.post("/chat")
-async def chat_with_llm(request: ChatRequest):
+@limiter.limit("20/minute")
+async def chat_with_llm(request: Request, chat_req: ChatRequest):
     try:
         chat = get_groq_chat()
         
-        messages = []
-        for msg in request.history:
-            role = msg.get("role")
-            content = msg.get("content")
-            if role == "user":
-                messages.append(HumanMessage(content=content))
-            elif role == "assistant":
-                messages.append(AIMessage(content=content))
-            elif role == "system":
-                 messages.append(SystemMessage(content=content))
+        ROLE_TO_MESSAGE = {
+            "user": HumanMessage,
+            "assistant": AIMessage,
+            "system": SystemMessage,
+        }
+
+        messages = [
+            ROLE_TO_MESSAGE[msg["role"]](content=msg["content"])
+            for msg in chat_req.history
+            if msg.get("role") in ROLE_TO_MESSAGE
+        ]
                 
         response = chat.invoke(messages)
         return {"response": response.content}

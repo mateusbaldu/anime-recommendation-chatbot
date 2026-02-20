@@ -6,7 +6,7 @@ export type Message = {
     text: string;
 };
 
-// Hook for chat logic
+
 export function useChat() {
     const [messages, setMessages] = useState<Message[]>([
         { id: 'initial-bot-1', role: 'bot', text: 'Hello! I am your anime recommendation bot. How can I help you today?' }
@@ -18,7 +18,7 @@ export function useChat() {
         setMessages(prev => [...prev, newUserMsg]);
         setIsLoading(true);
 
-        // Simulate API call
+
         setTimeout(() => {
             const botResponse: Message = { id: Date.now().toString() + '-bot', role: 'bot', text: 'This is a mocked response. Integration with /api/v1/chat/sessions pending.' };
             setMessages(prev => [...prev, botResponse]);

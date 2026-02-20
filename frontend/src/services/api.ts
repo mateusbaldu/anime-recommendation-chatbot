@@ -7,14 +7,11 @@ export const api = axios.create({
     },
 });
 
-// Interceptor: automatically attach auth headers to every request
+
 api.interceptors.request.use((config) => {
-    const token = localStorage.getItem('token');
     const guestSessionId = localStorage.getItem('guestSessionId');
 
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-    } else if (guestSessionId) {
+    if (guestSessionId) {
         config.headers['X-Guest-Session-Id'] = guestSessionId;
     }
 
