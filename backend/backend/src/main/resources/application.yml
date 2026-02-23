@@ -50,7 +50,7 @@ server:
 
 ai:
   service:
-    url: ${AI_SERVICE_URL:http://localhost:8000}
+    url: ${AI_SERVICE_URL:http://ai-service:8000}
 
 management:
   endpoints:
