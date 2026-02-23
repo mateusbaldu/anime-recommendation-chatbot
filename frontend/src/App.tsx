@@ -7,16 +7,27 @@ import { ChatPage } from './pages/ChatPage';
 
 function rootLoader() {
   const guestId = localStorage.getItem('guestSessionId');
+  const hasOnboarded = localStorage.getItem('hasCompletedOnboarding');
 
   if (!guestId) {
-
     const newGuestId = crypto.randomUUID();
     localStorage.setItem('guestSessionId', newGuestId);
     return redirect('/onboarding');
   }
 
+  if (hasOnboarded === 'true') {
+    return redirect('/chat');
+  }
 
-  return redirect('/chat');
+  return redirect('/onboarding');
+}
+
+function chatGuardLoader() {
+  const hasOnboarded = localStorage.getItem('hasCompletedOnboarding');
+  if (hasOnboarded !== 'true') {
+    return redirect('/onboarding');
+  }
+  return null;
 }
 
 const router = createBrowserRouter([
@@ -34,6 +45,7 @@ const router = createBrowserRouter([
       },
       {
         path: '/chat',
+        loader: chatGuardLoader,
         element: <ChatPage />,
       },
       {

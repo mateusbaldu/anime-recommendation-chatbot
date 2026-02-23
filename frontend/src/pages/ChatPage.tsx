@@ -82,10 +82,14 @@ export function ChatPage() {
             setMessages((prev) => [...prev, botMessage]);
         } catch (err) {
             console.error('Failed to send message:', err);
+
+            setMessages((prev) => prev.filter(msg => msg.id !== userMessage.id));
+            setInput(content);
+
             const errorMessage: ChatMessage = {
                 id: crypto.randomUUID(),
                 role: 'bot',
-                content: '⚠️ Something went wrong. Please try again.',
+                content: '⚠️ Ocorreu um erro de conexão ao tentar enviar sua mensagem. O texto foi restaurado na caixa de entrada para que você possa tentar novamente.',
             };
             setMessages((prev) => [...prev, errorMessage]);
         } finally {

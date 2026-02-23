@@ -30,20 +30,15 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(authz -> authz
+                        .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ASYNC).permitAll()
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/auth/me").authenticated()
                         .requestMatchers("/users/**").authenticated()
-                        .requestMatchers("/chats/**").authenticated()
+                        .requestMatchers("/chats", "/chats/**").authenticated()
                         .requestMatchers("/api/import/**").authenticated()
+                        .requestMatchers("/api/test-ai").permitAll()
                         .requestMatchers("/works", "/works/**").permitAll()
                         .anyRequest().authenticated())
-                .oauth2Login(oauth2 -> oauth2
-                        .successHandler((request, response, authentication) -> {
-                            response.sendRedirect(request.getContextPath() + "/auth/me");
-                        }))
-                .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> {
-                        }))
                 .addFilterBefore(guestAuthenticationFilter, BearerTokenAuthenticationFilter.class);
 
         return http.build();
@@ -52,9 +47,10 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:5173", "http://localhost:80"));
+        configuration
+                .setAllowedOrigins(List.of("http://localhost:5173", "http://localhost:5174", "http://localhost:80"));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Guest-Session-Id"));
+        configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

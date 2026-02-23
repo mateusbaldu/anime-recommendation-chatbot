@@ -15,6 +15,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -26,24 +28,23 @@ import java.util.concurrent.Executors;
 @Service
 public class ChatSessionService {
 
+    private static final Logger logger = LoggerFactory.getLogger(ChatSessionService.class);
     private final ChatSessionRepository chatSessionRepository;
     private final UserRepository userRepository;
     private final AuthenticationProvider authenticationProvider;
     private final AIService aiService;
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     public ChatSessionService(
             ChatSessionRepository chatSessionRepository,
             UserRepository userRepository,
             AuthenticationProvider authenticationProvider,
-            AIService aiService,
-            ObjectMapper objectMapper) {
+            AIService aiService) {
         this.chatSessionRepository = chatSessionRepository;
         this.userRepository = userRepository;
         this.authenticationProvider = authenticationProvider;
         this.aiService = aiService;
-        this.objectMapper = objectMapper;
     }
 
     private UUID getCurrentUserId() {
@@ -51,83 +52,113 @@ public class ChatSessionService {
     }
 
     public Page<ChatSessionResponse> getSessions(Pageable pageable) {
-        UUID userId = getCurrentUserId();
-        return chatSessionRepository.findByUserIdOrderByUpdatedAtDesc(userId, pageable)
-                .map(this::toResponse);
+        try {
+            UUID userId = getCurrentUserId();
+            logger.info("Fetching sessions for user: {}", userId);
+            return chatSessionRepository.findByUserIdOrderByUpdatedAtDesc(userId, pageable)
+                    .map(this::toResponse);
+        } catch (Exception e) {
+            logger.error("Error fetching sessions", e);
+            throw e;
+        }
     }
 
     @Transactional
     public ChatSessionResponse createSession() {
-        UUID userId = getCurrentUserId();
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        try {
+            UUID userId = getCurrentUserId();
+            logger.info("Creating session for user: {}", userId);
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
 
-        ChatSession session = new ChatSession();
-        session.setUser(user);
-        session.setMessages("[]");
+            ChatSession session = new ChatSession();
+            session.setUser(user);
+            session.setMessages("[]");
 
-        session = chatSessionRepository.save(session);
-        return toResponse(session);
+            session = chatSessionRepository.save(session);
+            logger.info("Session created successfully: {}", session.getId());
+            return toResponse(session);
+        } catch (Exception e) {
+            logger.error("Error creating chat session", e);
+            throw e;
+        }
     }
 
     public ChatSessionResponse getById(UUID id) {
-        UUID userId = getCurrentUserId();
-        return chatSessionRepository.findById(id)
-                .filter(session -> session.getUser().getId().equals(userId))
-                .map(this::toResponse)
-                .orElseThrow(() -> new RuntimeException("Chat session not found or unauthorized"));
+        try {
+            UUID userId = getCurrentUserId();
+            logger.info("Fetching session {} for user {}", id, userId);
+            return chatSessionRepository.findById(id)
+                    .filter(session -> session.getUser().getId().equals(userId))
+                    .map(this::toResponse)
+                    .orElseThrow(() -> new RuntimeException("Chat session not found or unauthorized"));
+        } catch (Exception e) {
+            logger.error("Error fetching session by id: {}", id, e);
+            throw e;
+        }
     }
 
     public SseEmitter sendMessage(UUID sessionId, String message) {
-        UUID userId = getCurrentUserId();
+        try {
+            UUID userId = getCurrentUserId();
+            logger.info("Sending message in session {} for user {}", sessionId, userId);
 
-        ChatSession session = chatSessionRepository.findById(sessionId)
-                .filter(s -> s.getUser().getId().equals(userId))
-                .orElseThrow(() -> new RuntimeException("Chat session not found or unauthorized"));
+            ChatSession session = chatSessionRepository.findById(sessionId)
+                    .filter(s -> s.getUser().getId().equals(userId))
+                    .orElseThrow(() -> new RuntimeException("Chat session not found or unauthorized"));
 
-        SseEmitter emitter = new SseEmitter(60_000L);
+            SseEmitter emitter = new SseEmitter(60_000L);
 
-        executor.execute(() -> {
-            try {
-
-                List<ChatMessage> history = parseMessages(session.getMessages());
-
-                if (history.isEmpty()) {
-                    history.add(new ChatMessage("system",
-                            "You are a friendly and knowledgeable anime recommendation assistant. " +
-                                    "Help users find anime they'll love based on their preferences, mood, " +
-                                    "and past favorites. Be enthusiastic but concise. " +
-                                    "When recommending anime, mention the title, genre, and a brief reason why they'd enjoy it."));
-                }
-
-                history.add(new ChatMessage("user", message));
-
-                String aiResponse = aiService.getChatResponse(history);
-
-                if (aiResponse == null || aiResponse.isBlank()) {
-                    aiResponse = "I'm sorry, I couldn't generate a response right now. Please try again.";
-                }
-
-                history.add(new ChatMessage("assistant", aiResponse));
-
-                String updatedJson = objectMapper.writeValueAsString(history);
-                session.setMessages(updatedJson);
-                chatSessionRepository.save(session);
-
-                emitter.send(SseEmitter.event().data(aiResponse));
-                emitter.complete();
-
-            } catch (Exception e) {
+            executor.execute(() -> {
                 try {
-                    emitter.send(SseEmitter.event().data("I'm having trouble connecting right now. Please try again."));
-                    emitter.complete();
-                } catch (IOException ioEx) {
-                    emitter.completeWithError(ioEx);
-                }
-            }
-        });
+                    logger.debug("Processing AI response for session {}", sessionId);
+                    List<ChatMessage> history = parseMessages(session.getMessages());
 
-        return emitter;
+                    if (history.isEmpty()) {
+                        history.add(new ChatMessage("system",
+                                "You are a friendly and knowledgeable anime recommendation assistant. " +
+                                        "Help users find anime they'll love based on their preferences, mood, " +
+                                        "and past favorites. Be enthusiastic but concise. " +
+                                        "When recommending anime, mention the title, genre, and a brief reason why they'd enjoy it."));
+                    }
+
+                    history.add(new ChatMessage("user", message));
+
+                    String aiResponse = aiService.getChatResponse(history);
+
+                    if (aiResponse == null || aiResponse.isBlank()) {
+                        logger.warn("AI response was null or blank for session {}", sessionId);
+                        aiResponse = "I'm sorry, I couldn't generate a response right now. Please try again.";
+                    }
+
+                    history.add(new ChatMessage("assistant", aiResponse));
+
+                    String updatedJson = objectMapper.writeValueAsString(history);
+                    session.setMessages(updatedJson);
+                    chatSessionRepository.save(session);
+                    logger.info("Successfully updated session {} with AI response", sessionId);
+
+                    emitter.send(SseEmitter.event().data(aiResponse));
+                    emitter.complete();
+
+                } catch (Exception e) {
+                    logger.error("Error within executor for session: {}", sessionId, e);
+                    try {
+                        emitter.send(
+                                SseEmitter.event().data("I'm having trouble connecting right now. Please try again."));
+                        emitter.complete();
+                    } catch (IOException ioEx) {
+                        logger.error("Failed to stream error message to client for session {}", sessionId, ioEx);
+                        emitter.completeWithError(ioEx);
+                    }
+                }
+            });
+
+            return emitter;
+        } catch (Exception e) {
+            logger.error("Error initiating send message for session: {}", sessionId, e);
+            throw e;
+        }
     }
 
     private List<ChatMessage> parseMessages(String messagesJson) {

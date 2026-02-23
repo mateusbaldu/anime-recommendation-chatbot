@@ -6,8 +6,13 @@ from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
 import os
+import traceback
+import logging
 from typing import List, Dict, Any
 from pathlib import Path
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -15,6 +20,7 @@ from fastapi import Request
 
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
+load_dotenv() # Fallback to local .env if any
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Anime Recommendation AI Service")
@@ -27,6 +33,10 @@ except Exception as e:
     embedding_model = None
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    logger.warning("GROQ_API_KEY is not set in environment variables!")
+else:
+    logger.info("GROQ_API_KEY is configured.")
 
 def get_groq_chat():
     if not GROQ_API_KEY:
@@ -77,7 +87,9 @@ async def chat_with_llm(request: Request, chat_req: ChatRequest):
         return {"response": response.content}
         
     except Exception as e:
-         raise HTTPException(status_code=500, detail=f"Error in chat processing: {str(e)}")
+        logger.error(f"Error in /chat endpoint: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Error in chat processing: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

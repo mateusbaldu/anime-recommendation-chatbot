@@ -5,7 +5,10 @@ import com.animerec.chat.dto.request.ChatRequest;
 import com.animerec.chat.dto.request.EmbedRequest;
 import com.animerec.chat.dto.response.ChatResponse;
 import com.animerec.chat.dto.response.EmbedResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -17,11 +20,16 @@ import java.util.stream.IntStream;
 @Service
 public class AIService {
 
+    private static final Logger logger = LoggerFactory.getLogger(AIService.class);
+
     private final RestTemplate restTemplate;
     private final String aiServiceUrl;
 
     public AIService(@Value("${ai.service.url:http://localhost:8000}") String aiServiceUrl) {
-        this.restTemplate = new RestTemplate();
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(60000); // 60 segundos
+        factory.setReadTimeout(60000); // 60 segundos
+        this.restTemplate = new RestTemplate(factory);
         this.aiServiceUrl = aiServiceUrl;
     }
 
@@ -30,7 +38,11 @@ public class AIService {
         String url = aiServiceUrl + "/embed";
         EmbedRequest request = new EmbedRequest(text);
 
-        return Optional.ofNullable(restTemplate.postForObject(url, request, EmbedResponse.class))
+        logger.info("Iniciando chamada ao AI Service para /embed...");
+        EmbedResponse response = restTemplate.postForObject(url, request, EmbedResponse.class);
+        logger.info("Resposta recebida do AI Service para /embed");
+
+        return Optional.ofNullable(response)
                 .map(EmbedResponse::getEmbedding)
                 .map(this::toFloatArray)
                 .orElse(new float[0]);
@@ -54,14 +66,38 @@ public class AIService {
         String url = aiServiceUrl + "/chat";
         ChatRequest request = new ChatRequest(history);
 
-        return Optional.ofNullable(restTemplate.postForObject(url, request, ChatResponse.class))
-                .map(ChatResponse::getResponse)
-                .orElse(null);
+        logger.info("Iniciando chamada ao AI Service para /chat...");
+        try {
+            ChatResponse response = restTemplate.postForObject(url, request, ChatResponse.class);
+            logger.info("Resposta recebida do AI Service para /chat");
+
+            return Optional.ofNullable(response)
+                    .map(ChatResponse::getResponse)
+                    .orElse(null);
+        } catch (org.springframework.web.client.HttpStatusCodeException e) {
+            logger.error("Erro HTTP ao chamar o AI Service. Status: {} - Corpo: {}", e.getStatusCode(),
+                    e.getResponseBodyAsString(), e);
+            throw e;
+        } catch (Exception e) {
+            logger.error("Erro inesperado ao chamar o AI Service: {}", e.getMessage(), e);
+            throw e;
+        }
     }
 
     @org.springframework.retry.annotation.Recover
     public String recoverGetChatResponse(Exception e, List<ChatMessage> history) {
-        throw new com.animerec.chat.exceptions.AiServiceUnavailableException(
-                "I'm sorry, I'm having trouble connecting to my brain right now.", e);
+        logger.error("Falha ao se comunicar com o AI Service após retentativas. Retornando fallback.");
+        return "Desculpe, meu cérebro de IA está temporariamente indisponível.";
+    }
+
+    public boolean ping() {
+        try {
+            logger.info("Pinging AI Service at {}", aiServiceUrl);
+            restTemplate.getForObject(aiServiceUrl + "/", String.class);
+            return true;
+        } catch (Exception e) {
+            logger.error("Ping to AI Service failed: {}", e.getMessage());
+            return false;
+        }
     }
 }
